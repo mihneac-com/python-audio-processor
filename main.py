@@ -39,10 +39,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.sampleRateSelector.addItems(['48000', '44100', '16000', '8000'])
         self.dataTypeSelector.addItems(['float32', 'int32', 'int16'])
         
+        self.masterVolumeSlider.setValue(100)
+        
 
     def startPlaybackEvent(self):
-        self.mainApp.updateConfig('sampleRate', int(self.sampleRateSelector.currentText()))
-        self.mainApp.updateConfig('dataType', self.dataTypeSelector.currentText())
+        #self.mainApp.updateConfig('sampleRate', int(self.sampleRateSelector.currentText()))
+        #self.mainApp.updateConfig('dataType', self.dataTypeSelector.currentText())
         
         self.mainApp.startAudioPlayback()
         self.startPlaybackBtn.setEnabled(False)
@@ -71,8 +73,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         
     def updateVolume(self, event):
         vol = np.interp(event, np.arange(0,100), np.arange(0,1,0.01))
-        self.mainApp.updateConfig('masterVolume', vol)
-        #print("sent vol: ", vol)
+        self.mainApp.updateVolume(vol)
 
 
 def main():
