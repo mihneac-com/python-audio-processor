@@ -62,7 +62,8 @@ w, h = signal.sosfreqz(af.flt, worN=4000, fs=48000)
 w, h2 = signal.sosfreqz(af2.flt, worN=4000, fs=48000)
 w, h3 = signal.sosfreqz(af3.flt, worN=4000, fs=48000)
 
-bands = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000]
+#bands = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000]
+bands = [(20, 39), (40,79), (80, 159), (160,299), (300,599), (600,1199), (1200, 2399), (2400,4999), (5000, 9999), (10000, 20000)]
 flt = []
 h = []
 db = []
@@ -70,13 +71,12 @@ db = []
 audio_cfg = AudioConfig()
 audio_filters = []
 # make filters
-audio_filters.append(AudioFilter(order=3, freq=audio_cfg.eqFreqs[0], ftype='lowpass', fs=audio_cfg.sampleRate))
-for i in range(0, audio_cfg.eqBands-1):
+audio_filters.append(AudioFilter(order=3, freq=39, ftype='lowpass', fs=audio_cfg.sampleRate))
+for i in range(1, audio_cfg.eqBands):
     # 1 ... 8 - shelving filters will be treated manually
-    low = audio_cfg.eqFreqs[i]
-    high = audio_cfg.eqFreqs[i+1]
+
     audio_filters.append(AudioFilter(order=3,
-                                     freq=(low,high),
+                                     freq=bands[i],
                                      fs=audio_cfg.sampleRate)
                          )
  

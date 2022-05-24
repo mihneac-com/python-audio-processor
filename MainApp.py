@@ -159,8 +159,8 @@ class MainApp(MainIODevices):
                                              freq=(low,high),
                                              fs=audio_cfg.sampleRate)
                                  )
-        print(audio_filters)
-        print(len(audio_filters))
+        #print(audio_filters)
+        #print(len(audio_filters))
         
         if self.inDevice == None:
             self.inDevice = 2
