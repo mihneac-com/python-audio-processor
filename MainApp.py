@@ -30,7 +30,7 @@ class AudioConfig():
         self.masterVolume = 1.0
         self.blockSize = 0
         
-        self.fftColumns = 1024
+        self.fftColumns = 20000
         self.fftSize = self.fftColumns
         self.fftFreqs = np.fft.rfftfreq(self.fftSize, 1/self.sampleRate)
         
@@ -39,6 +39,10 @@ class AudioConfig():
         self.eqBands = 10
         self.eqFreqs = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000]
         self.eqGain = np.ones(self.eqBands, dtype=float)
+        self.eqEnabled = True
+        self.eqLRTest = False
+        
+        self.mono = False
         
     def computeFFTDetails(self):
         self.fftSize = self.fftColumns
@@ -86,21 +90,33 @@ def audio_callback(indata, outdata, frames, time, status):
     out_l = np.zeros_like(left)
     out_r = np.zeros_like(right)
     
-    print(np.shape(indata), np.shape(outdata))
+    #print(np.shape(indata), np.shape(outdata))
  
     #left_flt, right_flt = af.compute(left, right, audio_cfg.eqGain[0])
-    
-    for i in range(0, len(audio_filters)):
-        left_flt, right_flt = audio_filters[i].compute(left, right, audio_cfg.eqGain[i])
-        out_l = out_l + left_flt
-        out_r = out_r + right_flt
+    if audio_cfg.eqEnabled == True:
+        for i in range(0, len(audio_filters)):
+            left_flt, right_flt = audio_filters[i].compute(left, right, audio_cfg.eqGain[i])
+            out_l = out_l + left_flt
+            out_r = out_r + right_flt
+        if audio_cfg.eqLRTest == True:
+            out_r = right
+    else:
+        out_l = left
+        out_r = right
         
     outdata[:,0] = out_l
     outdata[:,1] = out_r
     
     mono = outdata[:,0] + outdata[:,1]
-    mag = np.abs(np.fft.rfft(mono[:], n=audio_cfg.fftSize))
-    audio_queue.put(mag)
+    mono = mono / 2
+    
+    if audio_cfg.mono == True:
+        outdata[:, 0] = mono
+        outdata[:, 1] = mono
+#    mag = np.abs(np.fft.rfft(mono[:], n=audio_cfg.fftSize))
+#    audio_queue.put(mag)
+    audio_queue.put(mono)
+    #print(np.shape(mono))
     if audio_cfg.actualBlockSize != frames:
         audio_cfg.actualBlockSize = frames
     #audio_meta_queue.put((frames, time, status))
@@ -125,6 +141,15 @@ class MainApp(MainIODevices):
         audio_queue = queue.Queue()
         audio_filters = []
         # make filters
+        
+        # check filters and sample rate compatibility
+        flt_max = 0
+        for fr in audio_cfg.eqFreqs:
+            if fr < int(audio_cfg.sampleRate/2):
+                flt_max += 1
+        
+        audio_cfg.eqBands = flt_max
+        
         audio_filters.append(AudioFilter(order=3, freq=audio_cfg.eqFreqs[0], ftype='lowpass', fs=audio_cfg.sampleRate))
         for i in range(0, audio_cfg.eqBands-1):
             # 1 ... 8 - shelving filters will be treated manually
@@ -137,11 +162,16 @@ class MainApp(MainIODevices):
         print(audio_filters)
         print(len(audio_filters))
         
+        if self.inDevice == None:
+            self.inDevice = 2
+        if self.outDevice == None:
+            self.outDevice = 4
+        
         self.audio_stream = sd.Stream(channels=2,
                                       callback=audio_callback,
                                       dtype=audio_cfg.dataType,
                                       samplerate=audio_cfg.sampleRate,
-                                      device=(2,4),
+                                      device=(self.inDevice,self.outDevice),
                                       blocksize=audio_cfg.blockSize)
         self.audio_stream.start()
       

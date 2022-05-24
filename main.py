@@ -23,12 +23,27 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.setupUi(self)
         self.UiEvents()
         
+        self.EQ_max_gain = 6
+        
         self.fftGraph = pg.PlotWidget(self.fftGroupBox)
         self.fftGraph.setBackground('w')
         self.fftGraph.setGeometry(QtCore.QRect(10, 20, 761, 301))
-        self.fftGraph.plotItem.setLogMode(x=None, y=None)
-        self.fftGraph.setYRange(0, 100)
+        self.fftGraph.plotItem.setLogMode(x=True, y=False)
+        self.fftGraph.setYRange(0, 200)
+        self.fftGraph.setXRange(1.5, 4.2)
         self.fftPlotPen = pg.mkPen(color=(0,0,0))
+        # setup ticks
+        ticksValues = [ 20, 60, 100, 170, 310, 600, 1000, 3000, 6000, 12000, 20000 ]
+        ticks = []
+        for tick in ticksValues:
+            if tick < 1000:
+                txt = str(tick)
+            else:
+                txt = str(int(tick/1000)) + 'k'
+            ticks.append((np.log10(tick), txt))
+        
+        self.fftXAxis = self.fftGraph.getPlotItem().getAxis('bottom')
+        self.fftXAxis.setTicks([ticks])
         
         self.initUIContent()
         
@@ -47,6 +62,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.startPlaybackBtn.clicked.connect(self.startPlaybackEvent)
         self.stopPlaybackBtn.clicked.connect(self.stopPlaybackEvent)
         self.masterVolumeSlider.valueChanged.connect(self.updateVolume)
+        self.EQ_resetButton.clicked.connect(self.resetEQ)
+        self.EQ_Enable_btn.clicked.connect(self.enableEQ)
+        self.EQ_LRTest_btn.clicked.connect(self.lrTestEQ)
+        self.MonoBtn.clicked.connect(self.enableMono)
         
         for i in range(1, 11):
             getattr(self, 'EQ_slider' + str(i)).valueChanged.connect(self.updateEqSliders)
@@ -73,6 +92,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             else:
                 ft = str(freq)
             getattr(self, "EQ_label" + str(i)).setText(ft)
+            
+        self.EQ_max_gain_label.setText("+" + str(int(20*np.log10(self.EQ_max_gain))) + " dB")
         
         
 
@@ -80,6 +101,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.mainApp.updateConfigValue('sampleRate', int(self.sampleRateSelector.currentText()))
         self.mainApp.updateConfigValue('dataType', self.dataTypeSelector.currentText())
         self.mainApp.updateConfigValue('blockSize', int(self.blockSizeSelector.currentText()))
+        
+        self.mainApp.setInputDevice(self.inputDeviceSelector.currentText())
+        self.mainApp.setOutputDevice(self.outputDeviceSelector.currentText())
         
         self.mainApp.startAudioPlayback()
         self.startPlaybackBtn.setEnabled(False)
@@ -93,10 +117,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # fft plot
         self.fftGraph.plotItem.clear()
         ma.audio_cfg.computeFFTDetails()
-        self.fftPlotLine = self.fftGraph.plot(ma.audio_cfg.fftFreqs, np.zeros_like(ma.audio_cfg.fftFreqs), pen=self.fftPlotPen)
+        self.fftPlotLine = self.fftGraph.plot(ma.audio_cfg.fftFreqs,
+                                              np.zeros_like(ma.audio_cfg.fftFreqs),
+                                              pen=self.fftPlotPen
+                                              )
         
         
-        self.fftTimer.start(50)
+        self.fftTimer.start(35)
         
     def closeEvent(self, event):
         self.stopPlaybackEvent()
@@ -110,6 +137,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         
         self.enableInitControls()
         self.fftTimer.stop()
+        
+        self.fftGraph.plotItem.clear()
+        self.fftPlotLine = self.fftGraph.plot(ma.audio_cfg.fftFreqs,
+                                              np.zeros_like(ma.audio_cfg.fftFreqs),
+                                              pen=self.fftPlotPen
+                                              )
         
     def enableInitControls(self, enable=True):
         self.sampleRateSelector.setEnabled(enable)
@@ -136,24 +169,44 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             
     def updateFFT(self):
         # get data from queue until empty
-        data = []
+        data = np.array([])
         while not ma.audio_queue.empty():
-            data.append(ma.audio_queue.get())
-        # fft data comes faster than plot update frequency
-        avg = np.average(data, 0)
-        if np.shape(avg) == np.shape(ma.audio_cfg.fftFreqs):
-            self.fftPlotLine.setData(ma.audio_cfg.fftFreqs, avg)
+            data = np.append(data, ma.audio_queue.get())
+#        print(np.shape(data))
+        if np.shape(data)[0] < 1024:
+            return
+        data_2 = data[0:1024]
+        mag = np.abs(np.fft.rfft(data_2, n=ma.audio_cfg.fftSize))
+        if ma.audio_cfg.dataType != 'float32':
+            mag = mag / 32768.0
+        #print(np.shape(mag))
+        self.fftPlotLine.setData(ma.audio_cfg.fftFreqs, mag)
+        
             
     def updateEqSliders(self, event):
         sender = self.sender()
         name = sender.objectName()
         # get slider number
         num = int(name.replace("EQ_slider", "")) - 1
-        val = np.interp(event, np.arange(-50,51), np.arange(0,2.02, 0.02))
+        # scale gain
+        lower_gain = np.linspace(0, 1, 51, endpoint=False)
+        upper_gain = np.linspace(1, self.EQ_max_gain, 50)
+        total_gain = np.append(lower_gain, upper_gain)
+        val = np.interp(event, np.arange(-50,51), total_gain)
         ma.audio_cfg.eqGain[num] = val
         #print(num, '=>', val)
         #print(ma.audio_cfg.eqGain)
-
+        
+    def resetEQ(self):
+        for i in range(1, 11):
+            getattr(self, 'EQ_slider' + str(i)).setValue(0)
+            
+    def enableEQ(self, event :bool):
+        ma.audio_cfg.eqEnabled = event
+    def lrTestEQ(self, event :bool):
+        ma.audio_cfg.eqLRTest = event
+    def enableMono(self, event :bool):
+        ma.audio_cfg.mono = event
 
 
 def main():

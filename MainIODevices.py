@@ -13,6 +13,9 @@ class MainIODevices():
         self.outputDevices = []
         self.hostAPIs = []
         self.getIODevices()
+        
+        self.inDevice = None
+        self.outDevice = None
     
     def getDefaultIODevs(self):
         # (input, output)
@@ -53,10 +56,38 @@ class MainIODevices():
             devs.append(device['name'])
         return devs
     
-    def getIODeviceDetail(kind):
+    def getIODeviceDetail(self,kind):
         return "INPUT"
+    
+    def setInputDevice(self, devName):
+        # get device index in list
+        index = None
+        for i in range(len(self.inputDevices)):
+            if self.inputDevices[i]['name'] == devName:
+                index = i
+                break
+        
+        if index != None:
+            self.inDevice = index
+            print ("Setting IN device:", self.inDevice, devName)
+        else:
+            self.inDevice = None
+        
+    def setOutputDevice(self, devName):
+        # get device index in list
+        index = None
+        for i in range(len(self.outputDevices)):
+            if self.outputDevices[i]['name'] == devName:
+                index = i
+                break
+        
+        if index != None:
+            self.outDevice = len(self.inputDevices) + index
+            print("Setting OUT device:", self.outDevice, devName)
+        else:
+            self.outDevice = None
     
 if __name__ == "__main__":
     m = MainIODevices()
     
-    #pprint.pprint(m.inputDevices)
+    pprint.pprint(m.inputDevices)
