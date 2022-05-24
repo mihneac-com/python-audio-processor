@@ -12,63 +12,113 @@ import numpy as np
 assert np
 import pprint
 assert pprint
-import time
+#import time
+import queue
 from MainIODevices import MainIODevices
 
-import multiprocessing as mp
+
 
 sd.default.samplerate = 48000
 sd.default.device = (2, 4)
 
-            
-class Config():
+     
+class AudioConfig():
     def __init__(self):
         self.sampleRate = 48000
         self.dataType = 'float32'
-        self.masterVolume = 1.00
-# end class Config
-
-class AudioProcessor(mp.Process):
-    
-    def __init__(self, q):
-        super().__init__()
-        self.sampleRate = 48000
-        self.dataType = 'float32'
-        self.mastervolume = 1
+        self.masterVolume = 1.0
+        self.blockSize = 0
         
-    def run(self):
-        print("aaa", self.dataType)
-        with sd.Stream(channels=2, callback=self.audio_callback, dtype=self.dataType, samplerate=self.sampleRate):
-            while True:
-                time.sleep(2)
-                
-    def audio_callback(self, indata, outdata, frames, time, status):
-        outdata[:] = indata
+        self.fftColumns = 1024
+        
+        self.computeFFTDetails()
+    
+    def computeFFTDetails(self):
+        #low = 0
+        #high = np.clip(int(self.sampleRate/2), None, 20000)
+        #high = int(self.sampleRate/2)
+        #self.fftRange = (low, high)
+        #delta_f = (high - low) / (self.fftColumns - 1)
+        #self.fftFreqs = np.arange(low, high+1, delta_f )
+        #self.fftSize = int(np.ceil(self.sampleRate / delta_f))
+        
+        self.fftSize = self.fftColumns
+        self.fftFreqs = np.fft.rfftfreq(self.fftSize, 1/self.sampleRate)
+        
+        #print("FFT Range:", self.fftRange)
+#        print("FFT Size:", self.fftSize)
+#        print("FFT Columns:", self.fftFreqs)
+    
+        
 
-## end class AudioProcessor
+        
+audio_cfg = AudioConfig()
+audio_queue = queue.Queue()
+audio_meta_queue = queue.Queue()
+
+def audio_callback(indata, outdata, frames, time, status):
+    outdata[:] = indata * audio_cfg.masterVolume
+    mono = outdata[:,0] + outdata[:,1]
+    mag = np.abs(np.fft.rfft(mono[:], n=audio_cfg.fftSize))
+    audio_queue.put(mag)
+    #audio_meta_queue.put((frames, time, status))
 
 class MainApp(MainIODevices):
     
     def __init__(self):
         super().__init__()
-        self.ipc_q = mp.Queue()
+        sd.default.samplerate = 48000
+        sd.default.device = (2, 4)
+        self.audio_stream = None
+        
+        #self.c = AudioConfig()
+
     
     def startAudioPlayback(self):
-        self.p = AudioProcessor(self.ipc_q)
-        self.p.start()
-
-        
+        global audio_callback
+        global audio_cfg
+        global audio_queue
+        audio_queue = None
+        audio_queue = queue.Queue()
+        self.audio_stream = sd.Stream(channels=2,
+                                      callback=audio_callback,
+                                      dtype=audio_cfg.dataType,
+                                      samplerate=audio_cfg.sampleRate,
+                                      device=(2,4),
+                                      blocksize=audio_cfg.blockSize)
+        self.audio_stream.start()
+      
+ 
     def stopAudioPlayback(self):
-        self.p.terminate()
+        global audio_queue
+        if self.audio_stream != None:
+            self.audio_stream.close()
+        self.audio_stream = None
+        audio_queue = None
         
-    
     def updateVolume(self, vol):
         pass
     
+    def updateConfigValue(self, key, val):
+        setattr(audio_cfg, key, val)
+        
+    def getConfigValue(self, key):
+        getattr(audio_cfg, key)
+        
+        
+    def computeFFT(self):
+        pass
+        
+    
 # end class MainApp
-            
+
+
 if __name__ == '__main__':
     app = MainApp()
     app.getIODevices()
-
+#    app.startAudioPlayback()
+#    s = sd.Stream(channels=2, callback=audio_callback, dtype='float32', samplerate=48000, device=(2,4))
+#    s.start()
+#    time.sleep(60)
+#    s.stop()
     

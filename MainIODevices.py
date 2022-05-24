@@ -11,12 +11,7 @@ class MainIODevices():
         self.inputDevices = []
         self.outputDevices = []
         self.hostAPIs = []
-        
         self.getIODevices()
-        
-        #self.c = Config()
-
-        pass
     
     def getDefaultIODevs(self):
         return (2,4)
