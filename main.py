@@ -1,8 +1,10 @@
-from PyQt5 import QtCore, QtGui, QtWidgets, uic
-from PyQt5.QtWidgets import QApplication, QDialog
-from PyQt5.QtWidgets import QFileDialog
+from PyQt5 import QtCore, QtWidgets
+#from PyQt5 import uic, QtGui
+from PyQt5.QtWidgets import QApplication
+#from PyQt5.QtWidgets import QDialog
+#from PyQt5.QtWidgets import QFileDialog
 from PyQt5.QtCore import QTimer
-from pyqtgraph import PlotWidget, plot
+#from pyqtgraph import PlotWidget, plot #unused
 import pyqtgraph as pg
 import sys
 from events import WindowEvents
@@ -10,6 +12,7 @@ import MainApp as ma
 from MainApp import MainApp
 from MW import Ui_MainWindow
 import numpy as np
+import re
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -45,6 +48,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.stopPlaybackBtn.clicked.connect(self.stopPlaybackEvent)
         self.masterVolumeSlider.valueChanged.connect(self.updateVolume)
         
+        for i in range(1, 11):
+            getattr(self, 'EQ_slider' + str(i)).valueChanged.connect(self.updateEqSliders)
+        
     
     def initUIContent(self):
         self.inputDeviceSelector.addItems(self.mainApp.inputDevicesList())
@@ -59,6 +65,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.blockSizeSelector.addItems(['0','128', '256', '512', '1024', '2048', '4096'])
         
         self.masterVolumeSlider.setValue(100)
+        
+        for i in range(1, 11):
+            freq = ma.audio_cfg.eqFreqs[i-1]
+            if freq >= 1000:
+                ft = str(int(freq/1000)) + "k"
+            else:
+                ft = str(freq)
+            getattr(self, "EQ_label" + str(i)).setText(ft)
         
         
 
@@ -117,24 +131,29 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             #print(lat)
             self.inputLatencyLabel.setText("{:.1f}".format(lat[0]*1000))
             self.outputLatencyLabel.setText("{:.1f}".format(lat[1]*1000))
-            #self.blockSizeLabel.setText(str(self.mainApp.audio_stream()))
+            self.blockSizeLabel.setText(str(ma.audio_cfg.actualBlockSize))
             
-            
-            
-            #print("----")
-            #val = ma.audio_queue.get()
-            #print(val)
-            #print(np.shape(val))
-            #print("Size:", ma.audio_queue.qsize())
             
     def updateFFT(self):
         # get data from queue until empty
         data = []
         while not ma.audio_queue.empty():
             data.append(ma.audio_queue.get())
+        # fft data comes faster than plot update frequency
         avg = np.average(data, 0)
-        self.fftPlotLine.setData(ma.audio_cfg.fftFreqs, avg)
+        if np.shape(avg) == np.shape(ma.audio_cfg.fftFreqs):
+            self.fftPlotLine.setData(ma.audio_cfg.fftFreqs, avg)
             
+    def updateEqSliders(self, event):
+        sender = self.sender()
+        name = sender.objectName()
+        # get slider number
+        num = int(name.replace("EQ_slider", "")) - 1
+        val = np.interp(event, np.arange(-50,51), np.arange(0,2.02, 0.02))
+        ma.audio_cfg.eqGain[num] = val
+        #print(num, '=>', val)
+        #print(ma.audio_cfg.eqGain)
+
 
 
 def main():

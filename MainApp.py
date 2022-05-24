@@ -15,6 +15,7 @@ assert pprint
 #import time
 import queue
 from MainIODevices import MainIODevices
+from scipy import signal
 
 
 
@@ -30,37 +31,78 @@ class AudioConfig():
         self.blockSize = 0
         
         self.fftColumns = 1024
-        
-        self.computeFFTDetails()
-    
-    def computeFFTDetails(self):
-        #low = 0
-        #high = np.clip(int(self.sampleRate/2), None, 20000)
-        #high = int(self.sampleRate/2)
-        #self.fftRange = (low, high)
-        #delta_f = (high - low) / (self.fftColumns - 1)
-        #self.fftFreqs = np.arange(low, high+1, delta_f )
-        #self.fftSize = int(np.ceil(self.sampleRate / delta_f))
-        
         self.fftSize = self.fftColumns
         self.fftFreqs = np.fft.rfftfreq(self.fftSize, 1/self.sampleRate)
         
-        #print("FFT Range:", self.fftRange)
-#        print("FFT Size:", self.fftSize)
-#        print("FFT Columns:", self.fftFreqs)
-    
+        self.actualBlockSize = 0
         
-
+        self.eqBands = 10
+        self.eqFreqs = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000]
+        self.eqGain = np.ones(self.eqBands, dtype=float)
+        
+    def computeFFTDetails(self):
+        self.fftSize = self.fftColumns
+        self.fftFreqs = np.fft.rfftfreq(self.fftSize, 1/self.sampleRate)
+        
+    
+class AudioFilter():
+    def __init__(self, order=2, ftype='bandpass', freq=(None,None), fs=48000):
+        self.flt = signal.butter(order, 
+                                     freq,
+                                     fs=fs,
+                                     output='sos',
+                                     btype=ftype
+                                     )
+        self.zi_l = signal.sosfilt_zi(self.flt)
+        self.zi_r = signal.sosfilt_zi(self.flt)
+        
+    def compute(self, left, right, gain=1):
+        left_flt, self.zi_l = signal.sosfilt(self.flt, left, zi=self.zi_l)
+        right_flt, self.zi_r = signal.sosfilt(self.flt, right, zi=self.zi_r)
+    
+        left_flt = left_flt * gain
+        right_flt = right_flt * gain
+        
+        return left_flt, right_flt
+        
         
 audio_cfg = AudioConfig()
 audio_queue = queue.Queue()
 audio_meta_queue = queue.Queue()
 
+### bandpass filter test
+
+
+audio_filters = []
+
+#print(audio_filter_zi_l)
+### end filter test
+    
+
 def audio_callback(indata, outdata, frames, time, status):
-    outdata[:] = indata * audio_cfg.masterVolume
+    left = indata[:,0] * audio_cfg.masterVolume
+    right = indata[:,1] * audio_cfg.masterVolume
+    
+    out_l = np.zeros_like(left)
+    out_r = np.zeros_like(right)
+    
+    print(np.shape(indata), np.shape(outdata))
+ 
+    #left_flt, right_flt = af.compute(left, right, audio_cfg.eqGain[0])
+    
+    for i in range(0, len(audio_filters)):
+        left_flt, right_flt = audio_filters[i].compute(left, right, audio_cfg.eqGain[i])
+        out_l = out_l + left_flt
+        out_r = out_r + right_flt
+        
+    outdata[:,0] = out_l
+    outdata[:,1] = out_r
+    
     mono = outdata[:,0] + outdata[:,1]
     mag = np.abs(np.fft.rfft(mono[:], n=audio_cfg.fftSize))
     audio_queue.put(mag)
+    if audio_cfg.actualBlockSize != frames:
+        audio_cfg.actualBlockSize = frames
     #audio_meta_queue.put((frames, time, status))
 
 class MainApp(MainIODevices):
@@ -78,8 +120,23 @@ class MainApp(MainIODevices):
         global audio_callback
         global audio_cfg
         global audio_queue
+        global audio_filters
         audio_queue = None
         audio_queue = queue.Queue()
+        audio_filters = []
+        # make filters
+        audio_filters.append(AudioFilter(order=3, freq=audio_cfg.eqFreqs[0], ftype='lowpass', fs=audio_cfg.sampleRate))
+        for i in range(0, audio_cfg.eqBands-1):
+            # 1 ... 8 - shelving filters will be treated manually
+            low = audio_cfg.eqFreqs[i]
+            high = audio_cfg.eqFreqs[i+1]
+            audio_filters.append(AudioFilter(order=3,
+                                             freq=(low,high),
+                                             fs=audio_cfg.sampleRate)
+                                 )
+        print(audio_filters)
+        print(len(audio_filters))
+        
         self.audio_stream = sd.Stream(channels=2,
                                       callback=audio_callback,
                                       dtype=audio_cfg.dataType,
@@ -106,8 +163,6 @@ class MainApp(MainIODevices):
         getattr(audio_cfg, key)
         
         
-    def computeFFT(self):
-        pass
         
     
 # end class MainApp
